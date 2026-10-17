@@ -5,7 +5,9 @@ Plays every actor in turn: the admin creates developer accounts, three
 vendors each build and publish their node, the app developer publishes the
 game. Tokens are written to framework-sdk/.fw-dev-tokens.json (gitignored).
 
-    ADMIN_TOKEN=... python bootstrap_demo.py [--gateway http://127.0.0.1:8000] [--skip-build]
+    python bootstrap_demo.py --admin-token <token> [--gateway http://127.0.0.1:8000] [--skip-build]
+
+For a purely local run, run_local.py starts the gateway and calls this for you.
 """
 
 from __future__ import annotations
@@ -34,11 +36,16 @@ APP_DIR = WORKSPACE / "platformer-game-client"
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--gateway", default=os.environ.get("FW_GATEWAY_URL", "http://127.0.0.1:8000"))
+    parser.add_argument("--admin-token", default=os.environ.get("ADMIN_TOKEN"))
     parser.add_argument("--skip-build", action="store_true")
     args = parser.parse_args()
-    admin = os.environ.get("ADMIN_TOKEN") or sys.exit("set ADMIN_TOKEN")
-    gateway = args.gateway.rstrip("/")
+    if not args.admin_token:
+        sys.exit("pass --admin-token or set ADMIN_TOKEN")
+    bootstrap(args.gateway, args.admin_token, build=not args.skip_build)
 
+
+def bootstrap(gateway: str, admin: str, build: bool = True):
+    gateway = gateway.rstrip("/")
     with urllib.request.urlopen(f"{gateway}/health", timeout=120) as r:
         print(f"gateway {gateway}: {json.loads(r.read())}")
 
@@ -51,7 +58,7 @@ def main():
     tokens = {}
     for node_id, (vendor_id, vendor_name) in NODE_VENDORS.items():
         node_dir = WORKSPACE / f"physics-{node_id}-node"
-        if not args.skip_build:
+        if build:
             subprocess.run(["cargo", "build", "--release", "--quiet"], cwd=node_dir, check=True)
         tokens[vendor_id] = account(vendor_id, vendor_name, "vendor")
         result = publish("node", node_dir, gateway, tokens[vendor_id])
