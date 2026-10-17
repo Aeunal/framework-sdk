@@ -49,8 +49,9 @@ def node_payload(root: Path) -> tuple[str, dict]:
 
 def app_payload(root: Path) -> tuple[str, dict]:
     manifest = json.loads((root / "app_manifest.json").read_text())
-    entry = (root / manifest.get("entry", "game.js")).read_text(encoding="utf-8")
-    return f"/api/apps/{manifest['app_id']}", {"manifest": manifest, "entry_js": entry}
+    names = manifest.get("files") or [manifest["entry"]]
+    files = {name: (root / name).read_text(encoding="utf-8") for name in names}
+    return f"/api/apps/{manifest['app_id']}", {"manifest": manifest, "files": files}
 
 
 def publish(kind: str, root: str | Path, gateway: str, token: str) -> dict:
