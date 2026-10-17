@@ -7,6 +7,11 @@ for an app, app_manifest.json + its entry JS. Source code is never uploaded.
     FW_GATEWAY_URL=https://... FW_PUBLISH_TOKEN=fw_... python fwpublish.py node path/to/node-repo
     FW_GATEWAY_URL=https://... FW_PUBLISH_TOKEN=fw_... python fwpublish.py app  path/to/app-repo
 
+In a GitHub Actions job with `permissions: id-token: write`, leave
+FW_PUBLISH_TOKEN unset: the job's OIDC token (audience = the gateway URL) is
+used instead, and the gateway maps the repository to the node or app that
+`rapidboon init` registered for it. No secrets needed.
+
 Standard library only, so CI needs nothing beyond Python.
 """
 
@@ -17,14 +22,15 @@ import json
 import os
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
 
-def post(url: str, token: str, payload: dict) -> tuple[int, dict]:
+def post(url: str, token: str | None, payload: dict) -> tuple[int, dict]:
     request = urllib.request.Request(
         url, data=json.dumps(payload).encode(), method="POST",
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {token}"})
+        headers={"Content-Type": "application/json", **({"Authorization": f"Bearer {token}"} if token else {})})
     try:
         # Generous timeout: a sleeping Render free instance takes a while to wake.
         with urllib.request.urlopen(request, timeout=120) as response:
@@ -63,13 +69,25 @@ def publish(kind: str, root: str | Path, gateway: str, token: str) -> dict:
     return body
 
 
+def oidc_token(audience: str) -> str | None:
+    """This GitHub Actions job's OIDC token for `audience`, if the job may request one."""
+    url, bearer = os.environ.get("ACTIONS_ID_TOKEN_REQUEST_URL"), os.environ.get("ACTIONS_ID_TOKEN_REQUEST_TOKEN")
+    if not url or not bearer:
+        return None
+    request = urllib.request.Request(f"{url}&audience={urllib.parse.quote(audience, safe='')}",
+                                     headers={"Authorization": f"Bearer {bearer}"})
+    with urllib.request.urlopen(request, timeout=30) as response:
+        return json.loads(response.read())["value"]
+
+
 def main():
     if len(sys.argv) != 3 or sys.argv[1] not in ("node", "app"):
         sys.exit(__doc__)
-    gateway = os.environ.get("FW_GATEWAY_URL")
-    token = os.environ.get("FW_PUBLISH_TOKEN")
+    gateway = os.environ.get("FW_GATEWAY_URL", "").rstrip("/")
+    token = os.environ.get("FW_PUBLISH_TOKEN") or (gateway and oidc_token(gateway))
     if not gateway or not token:
-        sys.exit("set FW_GATEWAY_URL and FW_PUBLISH_TOKEN")
+        sys.exit("set FW_GATEWAY_URL, plus FW_PUBLISH_TOKEN unless this runs in GitHub Actions "
+                 "with `permissions: id-token: write`")
     result = publish(sys.argv[1], sys.argv[2], gateway, token)
     print(json.dumps(result, indent=2))
 

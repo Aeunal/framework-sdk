@@ -1,0 +1,40 @@
+# Reusable: publishes the calling app repo's app_manifest.json + the files it
+# lists. Nodes are referenced by id@version only. No secrets: the job's GitHub
+# OIDC token proves which repository it runs in, and the gateway publishes for
+# the app registered to that repo (`rapidboon init` registers it). The caller
+# grants `id-token: write`:
+#
+#   jobs:
+#     publish:
+#       uses: Aeunal/framework-sdk/.github/workflows/publish-app.yml@main
+#       permissions: { contents: read, id-token: write }
+#       with: { gateway: https://admin-billing-gateway.onrender.com }
+name: Publish app
+
+on:
+  workflow_call:
+    inputs:
+      gateway:
+        description: Gateway URL, also the OIDC token audience
+        type: string
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch framework publish tool
+        uses: actions/checkout@v4
+        with:
+          repository: Aeunal/framework-sdk
+          path: .fw-sdk
+
+      - name: Publish app
+        env:
+          FW_GATEWAY_URL: ${{ inputs.gateway }}
+        run: python3 .fw-sdk/tools/fwpublish.py app .

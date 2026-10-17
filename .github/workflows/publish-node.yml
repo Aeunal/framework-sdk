@@ -1,0 +1,44 @@
+# Reusable: builds the calling node repo to wasm and publishes ONLY node.json
+# + the .wasm. No secrets: the job's GitHub OIDC token proves which repository
+# it runs in, and the gateway publishes for the node registered to that repo
+# (`rapidboon init` registers it). The caller grants `id-token: write`:
+#
+#   jobs:
+#     publish:
+#       uses: Aeunal/framework-sdk/.github/workflows/publish-node.yml@main
+#       permissions: { contents: read, id-token: write }
+#       with: { gateway: https://admin-billing-gateway.onrender.com }
+name: Publish node
+
+on:
+  workflow_call:
+    inputs:
+      gateway:
+        description: Gateway URL, also the OIDC token audience
+        type: string
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch framework publish tool
+        uses: actions/checkout@v4
+        with:
+          repository: Aeunal/framework-sdk
+          path: .fw-sdk
+
+      - name: Build wasm
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo build --release
+
+      - name: Publish binary to registry
+        env:
+          FW_GATEWAY_URL: ${{ inputs.gateway }}
+        run: python3 .fw-sdk/tools/fwpublish.py node .

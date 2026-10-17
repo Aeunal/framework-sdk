@@ -47,12 +47,31 @@ Build with `cargo build --release --target wasm32-unknown-unknown`.
 | `rust/fw_node.rs` | `export_node!` for Rust nodes |
 | `python/fwhost.py` | Generic wasmtime host: run nodes headless, in tests, or server-side |
 | `tools/fwpublish.py` | Publish a node binary or an app's files (stdlib only; used by CI) |
+| `.github/workflows/publish-node.yml`, `publish-app.yml` | Reusable workflows: build and publish with the job's GitHub OIDC token, no secrets |
 | `tests/test_sandbox.py` | Host and sandbox tests with hand-written nodes |
 
 ```powershell
 python tests\test_sandbox.py                                        # needs: pip install wasmtime
 $env:FW_GATEWAY_URL="..."; $env:FW_PUBLISH_TOKEN="..."; python tools\fwpublish.py node <node-repo>
 ```
+
+## Publishing from CI
+
+A node or app repo calls a reusable workflow; `rapidboon init` writes this for you
+and registers the repo with the gateway, so no secrets or variables are needed:
+
+```yaml
+on: { push: { branches: [main] }, workflow_dispatch: {} }
+jobs:
+  publish:
+    uses: Aeunal/framework-sdk/.github/workflows/publish-node.yml@main   # or publish-app.yml
+    permissions: { contents: read, id-token: write }
+    with: { gateway: https://admin-billing-gateway.onrender.com }
+```
+
+The job asks GitHub for an OIDC token whose audience is the gateway URL, and
+`fwpublish.py` sends it when `FW_PUBLISH_TOKEN` is unset. Callers outside this
+account can only use these workflows while this repo is public.
 
 ## Related repos
 
