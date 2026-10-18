@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Publish a node binary or an app bundle to a Framework gateway.
+"""Publish a node binary, an app bundle or a remote service's contract to a Framework gateway.
 
 Only build output leaves the repo: for a node, node.json + the compiled .wasm;
 for a composite node ("kind": "composite"), node.json alone (a pipeline of
-published nodes); for an app, app_manifest.json + its entry JS. Source code is
-never uploaded.
+published nodes); for an app, app_manifest.json + its entry JS; for a remote
+service, service.json alone (its inputs, outputs, price and the services it
+calls; the platform's runner serves the built service). Source code is never uploaded.
 
-    FW_GATEWAY_URL=https://... FW_PUBLISH_TOKEN=fw_... python fwpublish.py node path/to/node-repo
-    FW_GATEWAY_URL=https://... FW_PUBLISH_TOKEN=fw_... python fwpublish.py app  path/to/app-repo
+    FW_GATEWAY_URL=https://... FW_PUBLISH_TOKEN=fw_... python fwpublish.py node    path/to/node-repo
+    FW_GATEWAY_URL=https://... FW_PUBLISH_TOKEN=fw_... python fwpublish.py app     path/to/app-repo
+    FW_GATEWAY_URL=https://... FW_PUBLISH_TOKEN=fw_... python fwpublish.py service path/to/service-repo
 
 In a GitHub Actions job with `permissions: id-token: write`, leave
 FW_PUBLISH_TOKEN unset: the job's OIDC token (audience = the gateway URL) is
@@ -64,9 +66,16 @@ def app_payload(root: Path) -> tuple[str, dict]:
     return f"/api/apps/{manifest['app_id']}", {"manifest": manifest, "files": files}
 
 
-def publish(kind: str, root: str | Path, gateway: str, token: str) -> dict:
+def service_payload(root: Path, endpoint: str | None = None) -> tuple[str, dict]:
+    meta = json.loads((root / "service.json").read_text())
+    return (f"/api/services/{meta['id']}/versions/{meta['version']}",
+            {"meta": meta, **({"endpoint": endpoint} if endpoint else {})})
+
+
+def publish(kind: str, root: str | Path, gateway: str, token: str, endpoint: str | None = None) -> dict:
+    """`endpoint` (services only) is where a runner serves it; only the platform's runners are accepted."""
     root = Path(root)
-    path, payload = node_payload(root) if kind == "node" else app_payload(root)
+    path, payload = {"node": node_payload, "app": app_payload}[kind](root) if kind != "service" else         service_payload(root, endpoint)
     status, body = post(gateway.rstrip("/") + path, token, payload)
     if status >= 400:
         raise SystemExit(f"publish {kind} {root.name} failed ({status}): {body.get('detail', body)}")
@@ -85,7 +94,7 @@ def oidc_token(audience: str) -> str | None:
 
 
 def main():
-    if len(sys.argv) != 3 or sys.argv[1] not in ("node", "app"):
+    if len(sys.argv) != 3 or sys.argv[1] not in ("node", "app", "service"):
         sys.exit(__doc__)
     gateway = os.environ.get("FW_GATEWAY_URL", "").rstrip("/")
     token = os.environ.get("FW_PUBLISH_TOKEN") or (gateway and oidc_token(gateway))

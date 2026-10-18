@@ -80,6 +80,46 @@ app's) instead of a binary, `abi`, `state_bytes` or `params`:
 - Apps list a composite like any node. A session runs its members in its place, in order, so runtimes see only plain nodes (a second run of the same node gets the id `node#2`); the app's 16-node limit counts members.
 - Billing: the app pays the composite's price to its owner, who pays each member's price to its vendor, each transfer minus the platform fee. A composite priced below its members' cost after the fee is refused.
 
+## Remote services (rb-call/1)
+
+Code that can't be an import-free wasm node (Python, JavaScript/TypeScript, C#, Java, Shell, or C/C++ built
+natively) is a **remote service**: called per request through the gateway, billed per call. The contract is
+one process per call:
+
+```
+stdin   {"text": "a b c"}                    the inputs, one JSON object
+stdout  {"words": 3, "label": "3 words"}     the outputs, one JSON object
+exit 0  (anything else is a failed call; stderr says why)
+env     RAPIDBOON_GATEWAY, RAPIDBOON_CALL_TOKEN   for calling other services, see below
+```
+
+A runner (the platform's, or `rapidboon serve` / `rapidboon dev` locally) answers `POST <endpoint>` with
+`{"inputs"}` by running the program once and replying `{"outputs"}`. Published metadata is `service.json`:
+
+```json
+{
+  "id": "text-report", "name": "Text Report", "version": "0.1.0", "language": "python",
+  "inputs": [{ "name": "text", "type": "string" }],
+  "outputs": [{ "name": "report", "type": "string" }],
+  "price_per_call_usd": 0.0003,
+  "calls": [{ "service": "text-stats", "version": "0.1.0" }]
+}
+```
+
+- Port types: `number`, `integer`, `bool`, `string`, `number[]`, `json`. The gateway checks every call's inputs
+  and the service's outputs against them, so neither side gets a shape it didn't declare.
+- `calls` pins the services it may call. Each call gets a short-lived call token; with it the service calls
+  `POST /api/services/<id>/call` for exactly those, and its owner pays them, like a composite's owner pays its
+  members. A price that doesn't cover `calls` after the platform fee is refused. Calls nest at most 4 deep.
+- Billing is per successful call: the caller pays the price, minus the platform fee for the owner. An app lists the
+  services it calls in its manifest with its own `price_per_call_usd` (it resells them; the same price rule
+  applies), and `fw.call(service, inputs)` in the browser runtime calls them through the session.
+- The gateway forwards only to endpoints under `SERVICE_URL_PREFIXES` (the platform's runners; empty = remote
+  calls off), never follows redirects, and caps answers at 1 MB and 30 s. A published service with no runner
+  is listed as not deployed.
+- `fwpublish.py service <dir>` publishes `service.json` (with the repo's OIDC token in CI). Hosting the built
+  service is the platform's job; generated repos carry a `Dockerfile` for it.
+
 ## App manifest
 
 ```json
