@@ -53,6 +53,33 @@ Published alongside the binary:
 
 `params[i]` maps the name an app uses in its manifest to `fw_set_param(i, …)`.
 
+### Composite nodes
+
+A node can also be a combination of other published nodes, sold as one. Its
+`node.json` has `"kind": "composite"` and a `pipeline` (the same shape as an
+app's) instead of a binary, `abi`, `state_bytes` or `params`:
+
+```json
+{
+  "id": "my-engine",
+  "name": "My Engine",
+  "version": "1.0.0",
+  "kind": "composite",
+  "schema": "my-domain@1",
+  "description": "...",
+  "price_per_minute_usd": 0.0015,
+  "pipeline": [
+    { "node": "my-node", "version": "2.0.0", "params": { "strength": 2 } },
+    { "node": "other-vendors-node", "version": "1.0.0" }
+  ]
+}
+```
+
+- The gateway checks it like an app: members exist and speak its schema, agree on the state size, number at most 16, and are not composites themselves. A member may appear more than once (e.g. two layers of one kind), at one version.
+- Member versions are pinned: a composite keeps running and paying the versions it lists.
+- Apps list a composite like any node. A session runs its members in its place, in order, so runtimes see only plain nodes (a second run of the same node gets the id `node#2`); the app's 16-node limit counts members.
+- Billing: the app pays the composite's price to its owner, who pays each member's price to its vendor, each transfer minus the platform fee. A composite priced below its members' cost after the fee is refused.
+
 ## App manifest
 
 ```json

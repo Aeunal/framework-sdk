@@ -39,6 +39,10 @@ export_node!(World, World::ZERO, step, DEFAULTS);
 `node.json` declares `abi: 2`, the `schema`, `state_bytes`, params, and price.
 Build with `cargo build --release --target wasm32-unknown-unknown`.
 
+A **composite node** needs no code: its `node.json` lists other published
+nodes (`"kind": "composite"` plus a `pipeline`), and it is sold and billed as
+one node. See [ABI.md](ABI.md#composite-nodes).
+
 ## Tools
 
 | Path | What |

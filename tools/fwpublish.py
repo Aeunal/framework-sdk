@@ -2,7 +2,9 @@
 """Publish a node binary or an app bundle to a Framework gateway.
 
 Only build output leaves the repo: for a node, node.json + the compiled .wasm;
-for an app, app_manifest.json + its entry JS. Source code is never uploaded.
+for a composite node ("kind": "composite"), node.json alone (a pipeline of
+published nodes); for an app, app_manifest.json + its entry JS. Source code is
+never uploaded.
 
     FW_GATEWAY_URL=https://... FW_PUBLISH_TOKEN=fw_... python fwpublish.py node path/to/node-repo
     FW_GATEWAY_URL=https://... FW_PUBLISH_TOKEN=fw_... python fwpublish.py app  path/to/app-repo
@@ -45,11 +47,13 @@ def post(url: str, token: str | None, payload: dict) -> tuple[int, dict]:
 
 def node_payload(root: Path) -> tuple[str, dict]:
     meta = json.loads((root / "node.json").read_text())
+    path = f"/api/registry/nodes/{meta['id']}/versions/{meta['version']}"
+    if meta.get("kind") == "composite":  # nothing to build: the gateway runs its members' published binaries
+        return path, {"meta": meta}
     wasm_files = sorted((root / "target" / "wasm32-unknown-unknown" / "release").glob("*.wasm"))
     if len(wasm_files) != 1:
         sys.exit(f"{root}: expected exactly one release .wasm (run `cargo build --release`), found {len(wasm_files)}")
     wasm = wasm_files[0].read_bytes()
-    path = f"/api/registry/nodes/{meta['id']}/versions/{meta['version']}"
     return path, {"meta": meta, "wasm_b64": base64.b64encode(wasm).decode()}
 
 
