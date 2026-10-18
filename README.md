@@ -50,8 +50,9 @@ one node. See [ABI.md](ABI.md#composite-nodes).
 | `ABI.md` | The node ABI, `node.json`, and the app manifest |
 | `rust/fw_node.rs` | `export_node!` for Rust nodes |
 | `python/fwhost.py` | Generic wasmtime host: run nodes headless, in tests, or server-side |
-| `tools/fwpublish.py` | Publish a node binary or an app's files (stdlib only; used by CI) |
-| `.github/workflows/publish-node.yml`, `publish-app.yml` | Reusable workflows: build and publish with the job's GitHub OIDC token, no secrets |
+| `tools/fwpublish.py` | Publish a node binary, an app's files, a service's contract or a dataset file (stdlib only; used by CI) |
+| `tools/rbdataset.py` | Build a dataset endpoint (rapidboon.dataset.json + CSV, JSON or Parquet) into one SQLite file (stdlib; pyarrow for Parquet). The same file as rapidboon-cli's `rapidboon/dataset.py` |
+| `.github/workflows/publish-node.yml`, `publish-app.yml`, `publish-dataset.yml` | Reusable workflows: build and publish with the job's GitHub OIDC token, no secrets |
 | `tests/test_sandbox.py` | Host and sandbox tests with hand-written nodes |
 
 ```powershell
@@ -68,7 +69,7 @@ and registers the repo with the gateway, so no secrets or variables are needed:
 on: { push: { branches: [main] }, workflow_dispatch: {} }
 jobs:
   publish:
-    uses: Aeunal/framework-sdk/.github/workflows/publish-node.yml@main   # or publish-app.yml
+    uses: Aeunal/framework-sdk/.github/workflows/publish-node.yml@main   # or publish-app.yml, publish-dataset.yml
     permissions: { contents: read, id-token: write }
     with: { gateway: https://admin-billing-gateway.onrender.com }
 ```

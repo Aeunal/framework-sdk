@@ -1,0 +1,58 @@
+# Reusable: builds the calling repo's dataset endpoint (rapidboon.dataset.json + its CSV, JSON or Parquet
+# sources) into one SQLite file and publishes ONLY that file. Sources come from the checkout (committed
+# files, or Git LFS objects) or, when missing, from the repo's GitHub Release named in "release" (downloaded
+# with the job's own token). No secrets: the job's GitHub OIDC token proves which repository it runs in, and
+# the gateway publishes for the dataset registered to that repo (`rapidboon init` registers it). The caller
+# grants `id-token: write`:
+#
+#   jobs:
+#     publish:
+#       uses: Aeunal/framework-sdk/.github/workflows/publish-dataset.yml@main
+#       permissions: { contents: read, id-token: write }
+#       with: { gateway: https://admin-billing-gateway.onrender.com }   # add `path: <folder>` per endpoint
+name: Publish dataset
+
+on:
+  workflow_call:
+    inputs:
+      gateway:
+        description: Gateway URL, also the OIDC token audience
+        type: string
+        required: true
+      path:
+        description: The endpoint's folder in the repo (a multi-endpoint repo publishes each one)
+        type: string
+        default: .
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Fetch framework publish tool
+        uses: actions/checkout@v4
+        with:
+          repository: Aeunal/framework-sdk
+          path: .fw-sdk
+
+      - name: Install pyarrow (Parquet sources only)
+        working-directory: ${{ inputs.path }}
+        run: if grep -q '\.parquet"' rapidboon.dataset.json; then python3 -m pip install pyarrow==21.0.0; fi
+
+      - name: Build the dataset file
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: ${{ inputs.path }}
+        run: python3 "$GITHUB_WORKSPACE/.fw-sdk/tools/rbdataset.py" build .
+
+      - name: Publish dataset to the gateway
+        env:
+          FW_GATEWAY_URL: ${{ inputs.gateway }}
+        working-directory: ${{ inputs.path }}
+        run: python3 "$GITHUB_WORKSPACE/.fw-sdk/tools/fwpublish.py" dataset .
