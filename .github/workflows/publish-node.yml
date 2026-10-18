@@ -8,7 +8,7 @@
 #     publish:
 #       uses: Aeunal/framework-sdk/.github/workflows/publish-node.yml@main
 #       permissions: { contents: read, id-token: write }
-#       with: { gateway: https://admin-billing-gateway.onrender.com }
+#       with: { gateway: https://admin-billing-gateway.onrender.com }   # add `path: <folder>` per endpoint
 name: Publish node
 
 on:
@@ -18,6 +18,10 @@ on:
         description: Gateway URL, also the OIDC token audience
         type: string
         required: true
+      path:
+        description: The endpoint's folder in the repo (a multi-endpoint repo publishes each one)
+        type: string
+        default: .
 
 jobs:
   publish:
@@ -35,7 +39,8 @@ jobs:
           path: .fw-sdk
 
       - name: Build wasm
-        if: hashFiles('Cargo.toml') != ''
+        if: hashFiles(format('{0}/Cargo.toml', inputs.path)) != ''
+        working-directory: ${{ inputs.path }}
         run: |
           rustup target add wasm32-unknown-unknown
           cargo build --release
@@ -43,4 +48,5 @@ jobs:
       - name: Publish binary to registry
         env:
           FW_GATEWAY_URL: ${{ inputs.gateway }}
-        run: python3 .fw-sdk/tools/fwpublish.py node .
+        working-directory: ${{ inputs.path }}
+        run: python3 "$GITHUB_WORKSPACE/.fw-sdk/tools/fwpublish.py" node .

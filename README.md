@@ -73,12 +73,13 @@ jobs:
     with: { gateway: https://admin-billing-gateway.onrender.com }
 ```
 
-The job asks GitHub for an OIDC token whose audience is the gateway URL, and
+A repo with several endpoints (one folder each) calls the workflow once per endpoint with `path: <folder>`;
+`rapidboon build` writes those jobs. The job asks GitHub for an OIDC token whose audience is the gateway URL, and
 `fwpublish.py` sends it when `FW_PUBLISH_TOKEN` is unset. Callers outside this
 account can only use these workflows while this repo is public.
 
 ## Related repos
 
-- `admin-billing-gateway`: the platform (registry, sessions, billing, browser runtime)
+- `rapidboon-gateway`: the platform (registry, sessions, billing, browser runtime)
 - `admin-cloud-compiler`: desktop runtime and packager
 - `physics2d-world`: the first schema, plus the feasibility study built on it
