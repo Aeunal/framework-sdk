@@ -9,17 +9,18 @@ A dataset endpoint is a folder with rapidboon.dataset.json and its data:
                  "columns": [{"name": "city", "type": "text"}, {"name": "temp_c", "type": "real"}]}],
      "policy": {"columns": {"readings": ["city", "temp_c"]}, "max_rows": 1000,
                 "aggregate_only": false, "min_group_size": 10, "accounts": []},
-     "release": "data-v1"}
+     "release": "data-v1", "prepare": "python export.py"}
 
 Column types are text, integer and real. A source is CSV (with a header row), JSON (an array of objects),
 JSON Lines (.jsonl, .ndjson) or Parquet (needs pyarrow); columns are matched by name and extra ones are left
-out. A source missing from the folder is downloaded from the repo's GitHub Release `release` with the gh CLI
-(in CI, GH_TOKEN is the job's token). The policy says what consumers may see: the shared columns of each
+out. `prepare`, if set, is a command the build runs in the folder first, to write the sources from data kept
+elsewhere (an export from Firestore, Postgres, an API...); in CI it runs on every publish. A source still missing
+is downloaded from the repo's GitHub Release `release` with the gh CLI (in CI, GH_TOKEN is the job's token). The policy says what consumers may see: the shared columns of each
 shared table, rows per answer, aggregate-only answers over groups of at least min_group_size rows, and an
 optional allow-list of accounts. The gateway enforces it on every query and checks these rules again.
 
 The build writes .rapidboon/dataset.sqlite: STRICT tables, their indexes, and _rapidboon_dataset holding the
-metadata without the sources, plus content_sha256 (of the metadata and the source bytes, so the same data
+metadata without the sources (nor release and prepare), plus content_sha256 (of the metadata and the source bytes, so the same data
 rebuilt by another SQLite version publishes as "unchanged").
 
     python rbdataset.py build DIR    build; prints the steps as JSON, exit 1 if one failed (2: not built here)
@@ -71,6 +72,8 @@ def check(meta) -> None:
         raise ValueError("price_per_query_usd must be a number between 0 and 10 (USD)")
     if not isinstance(meta.get("release", ""), str):
         raise ValueError("release must be the tag of a GitHub Release")
+    if not isinstance(meta.get("prepare", ""), str) or len(meta.get("prepare", "")) > 500:
+        raise ValueError("prepare must be a command of at most 500 characters")
     tables = meta.get("tables")
     if not isinstance(tables, list) or not 0 < len(tables) <= 32:
         raise ValueError("tables must list 1-32 tables")
@@ -194,6 +197,15 @@ def records(path: Path, names: list[str]):
         raise ValueError("a source is .csv, .tsv, .json, .jsonl, .ndjson or .parquet")
 
 
+def prepare(root: Path, meta: dict) -> list[dict]:
+    """Run the dataset's prepare command in its folder: it writes the sources (an export from a database, say)."""
+    if not meta.get("prepare"):
+        return []
+    r = subprocess.run(meta["prepare"], shell=True, cwd=root, capture_output=True, text=True, errors="replace")
+    return [{"step": f"prepare: {meta['prepare']}", "status": "ok" if r.returncode == 0 else "failed",
+             "detail": (r.stdout + r.stderr).strip()[-800:]}]
+
+
 def fetch(root: Path, meta: dict) -> list[dict]:
     """Download the sources missing from the folder from the repo's GitHub Release `release` (gh CLI)."""
     missing = [t["source"] for t in meta["tables"] if not (root / t["source"]).is_file()]
@@ -264,9 +276,10 @@ def build(root: str | Path) -> list[dict]:
     except (OSError, ValueError) as e:
         return [{"step": f"check {FILE}", "status": "failed", "detail": str(e)}]
     results = [{"step": f"check {FILE}", "status": "ok", "detail": ""}]
-    results += fetch(root, meta)
-    if any(r["status"] != "ok" for r in results):
-        return results
+    for step in (prepare, fetch):
+        results += step(root, meta)
+        if any(r["status"] != "ok" for r in results):
+            return results
     out = root / OUT
     out.parent.mkdir(parents=True, exist_ok=True)
     (out.parent / ".gitignore").write_text("*\n")  # build output: never committed, wherever the folder is
@@ -288,7 +301,7 @@ def build(root: str | Path) -> list[dict]:
                 detail = str(e) if isinstance(e, (ValueError, OSError)) else f"{type(e).__name__}: {e}"
                 results.append({"step": step, "status": "failed", "detail": detail})
                 return results
-        stored = {k: v for k, v in meta.items() if k != "release"}
+        stored = {k: v for k, v in meta.items() if k not in ("release", "prepare")}
         stored["tables"] = [{k: v for k, v in t.items() if k != "source"} for t in meta["tables"]]
         stored["content_sha256"] = digest.hexdigest()
         con.execute(f"CREATE TABLE {META_TABLE} (json TEXT NOT NULL)")
